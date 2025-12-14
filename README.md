@@ -1,14 +1,14 @@
-#Lightslop: A Bare Metal Snake Game
+# Lightslop: A Bare Metal Snake Game
 
-This is my final project for the EECE558 Embedded Systems course at Binghamton University. It is a bare metal Snake game using the Raspberry Pi Pico 2 and two MAX7219 LED matrix modules.
+This is my final project for the EECE558 Embedded Systems Design course at Binghamton University. It is a bare metal Snake game using the Raspberry Pi Pico 2 and two MAX7219 LED matrix modules.
 
-For technical details, read the project repoert [here](https://github.com/user-attachments/files/24152910/report.pdf).
+For technical details, read the project report [here](https://github.com/user-attachments/files/24152910/report.pdf).
 
-<img width="3472" height="4624" alt="lsr" src="https://github.com/user-attachments/assets/646a870e-dca8-4e56-ba69-61454af7ab8b" /> <img width="3472" height="4624" alt="lsl" src="https://github.com/user-attachments/assets/2543c1d2-d071-42ae-ac7d-f434a49100cb" /> 
+<img width="400" height="600" alt="lsr" src="https://github.com/user-attachments/assets/646a870e-dca8-4e56-ba69-61454af7ab8b" /> <img width="400" height="600" alt="lsl" src="https://github.com/user-attachments/assets/2543c1d2-d071-42ae-ac7d-f434a49100cb" /> 
 
 ## Quick Setup
 - Wire up the components as shown in the diagram below (the red squares are the LED matrices):
-  <img width="1005" height="1824" alt="wiring" src="https://github.com/user-attachments/assets/5ab38fae-212c-4076-b607-47124744a34b" />
+  <img width="600" height="1088" alt="wiring" src="https://github.com/user-attachments/assets/5ab38fae-212c-4076-b607-47124744a34b" />
 - Clone the repository
 - Plug the Pi Pico into your computer while holding the `BOOTSEL` button
 - Drag `lightslop.uf2` into the folder that pops up
