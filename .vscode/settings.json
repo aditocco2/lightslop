@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "sio.h": "c",
+        "*.v1": "c",
+        "stdbool.h": "c",
+        "io_bank0.h": "c",
+        "pio.h": "c",
+        "led_matrices.h": "c",
+        "stdint.h": "c"
+    }
+}

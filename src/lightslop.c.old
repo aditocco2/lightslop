@@ -1,0 +1,335 @@
+#include <stdint.h>
+#include <stdbool.h>
+#include <interrupt.h>
+#include <systick.h>
+#include <watchdog.h>
+#include <led_matrices.h>
+#include <five_buttons.h>
+#include <digits.h>
+#include <snake_symbols.h>
+#include <prng.h>
+
+#define SLOW_SPEED_HZ 2
+#define MEDIUM_SPEED_HZ 3
+#define FAST_SPEED_HZ 5
+#define IMPOSSIBLE_SPEED_HZ 10
+
+#define SNAKE_BUFFER_SIZE 64
+#define next(v) ((v+1) % SNAKE_BUFFER_SIZE)
+
+typedef struct{
+    uint8_t x;
+    uint8_t y;
+} coordinate;
+typedef enum {UP, DOWN, LEFT, RIGHT} direction;
+
+static coordinate snake_buffer[SNAKE_BUFFER_SIZE];
+static uint8_t head, tail;
+static coordinate head_pos, tail_pos;
+
+static direction buffered_direction;
+static direction current_direction;
+
+static enum {SLOW, MEDIUM, FAST, IMPOSSIBLE} speed;
+static uint16_t game_interval_ms;
+
+static coordinate food_location;
+
+static uint8_t score = 0;
+
+void snake(void);
+void mode_select(void);
+void init_gameplay(void);
+void init_snake_data(void);
+void gameplay(void);
+void update_direction(void);
+void move_snake(void);
+coordinate read_from_snake_buffer(void);
+void write_to_snake_buffer(coordinate coord);
+_Bool collision(void);
+_Bool coordinates_equal(coordinate coord1, coordinate coord2);
+_Bool snake_buffer_is_full(void);
+_Bool snake_ate_food(void);
+void update_score(void);
+void update_snake_pixels(void);
+void generate_food(void);
+
+void main(void){
+    __disable_irq();
+    configure_systick();
+    configure_watchdog(1100);
+    configure_led_matrices();
+    configure_buttons();
+    register_systick_callback(snake);
+    register_systick_callback(update_prng);
+    register_systick_callback(feed_the_watchdog);
+    __enable_irq();
+
+    seed_prng(146);
+
+    while(1){
+        __wait_for_interrupt();
+        if(!system_tick()){
+            continue;
+        }
+    }
+}
+
+void snake(void){
+    static enum {MODE_SELECT, GAMEPLAY, GAME_OVER} state;
+    static uint16_t cntr = 0;
+    switch(state){
+        case MODE_SELECT:
+            mode_select();
+            if (btnD_is_pressed()){
+                init_gameplay();
+                state = GAMEPLAY;
+            }
+            break;
+
+        case GAMEPLAY:
+            gameplay();
+            if(collision() || snake_buffer_is_full()){
+                state = GAME_OVER;
+                cntr = 0;
+                break;
+            }
+            break;
+
+        case GAME_OVER:
+            if(cntr < 1000){
+                cntr++;
+            }
+            else if(btnD_is_pressed()){
+                state = MODE_SELECT;
+            }
+            break;
+    }
+}
+
+void mode_select(void){
+    show_snake_logo();
+    switch(speed){
+        case SLOW:
+            show_slow_symbol();
+            game_interval_ms = 1000 / SLOW_SPEED_HZ;
+            if(btnR_is_pressed()){
+                speed = MEDIUM;
+            }
+            break;
+        case MEDIUM:
+            show_medium_symbol();
+            game_interval_ms = 1000 / MEDIUM_SPEED_HZ;
+            if(btnR_is_pressed()){
+                speed = FAST;
+            }
+            if(btnL_is_pressed()){
+                speed = SLOW;
+            }
+            break;
+        case FAST:
+            show_fast_symbol();
+            game_interval_ms = 1000 / FAST_SPEED_HZ;
+            if(btnR_is_pressed()){
+                speed = IMPOSSIBLE;
+            }
+            if(btnL_is_pressed()){
+                speed = MEDIUM;
+            }
+            break;
+        case IMPOSSIBLE:
+            show_impossible_symbol();
+            game_interval_ms = 1000 / IMPOSSIBLE_SPEED_HZ;
+            if(btnR_is_pressed()){
+                speed = IMPOSSIBLE;
+            }
+            if(btnL_is_pressed()){
+                speed = MEDIUM;
+            }
+    }
+}
+
+void init_gameplay(void){
+    clear_screen();
+
+    score = 0;
+    print_number(score, 0);
+
+    init_snake_data();
+    generate_food();
+}
+
+void init_snake_data(void){
+    head_pos.x = 3;
+    head_pos.y = 7;
+    current_direction = UP;
+    buffered_direction = UP;
+    
+    head = 0;
+    tail = 0;
+
+    write_to_snake_buffer(head_pos);
+
+    set_pixel(head_pos.x, head_pos.y, 1);
+}
+
+void gameplay(void){
+    static enum {WAIT, MOVE_SNAKE, COLLISION_CHECK, UPDATE_SCREEN, GENERATE_FOOD} state;
+    static uint16_t cntr;
+    
+    cntr++;
+    update_direction();
+
+    switch(state){
+        case WAIT:
+            if(cntr >= game_interval_ms){
+                state = MOVE_SNAKE;
+                cntr = 0;
+            }
+            break;
+        case MOVE_SNAKE:
+            move_snake();
+            state = COLLISION_CHECK;
+            break;
+        case COLLISION_CHECK:
+            if(snake_ate_food() && !snake_buffer_is_full()){
+                update_score();
+                state = GENERATE_FOOD;
+            }
+            else if(snake_ate_food()){
+                update_score();
+                state = WAIT;
+            }
+            else if(collision() || snake_buffer_is_full()){
+                state = WAIT;
+            }
+            else{
+                state = UPDATE_SCREEN;
+            }
+            break;
+        case UPDATE_SCREEN:
+            update_snake_pixels();
+            state = WAIT;
+            break;
+        case GENERATE_FOOD:
+            generate_food();
+            state = WAIT;
+            break;
+    }
+}
+
+void update_direction(void){
+    if(btnU_is_pressed() && current_direction != DOWN){
+        buffered_direction = UP;
+    }
+    if(btnD_is_pressed() && current_direction != UP){
+        buffered_direction = DOWN;
+    }
+    if(btnL_is_pressed() && current_direction != RIGHT){
+        buffered_direction = LEFT;
+    }
+    if(btnR_is_pressed() && current_direction != LEFT){
+        buffered_direction = RIGHT;
+    }
+}
+
+void move_snake(void){
+    current_direction = buffered_direction;
+
+    switch(current_direction){
+        case UP:
+            head_pos.y--;
+            break;
+        case DOWN:
+            head_pos.y++;
+            break;
+        case LEFT:
+            head_pos.x--;
+            break;
+        case RIGHT:
+            head_pos.x++;
+            break;
+    }
+
+    write_to_snake_buffer(head_pos);
+
+    if(!snake_ate_food()){
+        tail_pos = read_from_snake_buffer();
+    }
+}
+
+coordinate read_from_snake_buffer(void){
+    coordinate coord = snake_buffer[tail];
+    tail = next(tail);
+    return coord;
+}
+
+void write_to_snake_buffer(coordinate coord){
+    snake_buffer[head] = coord;
+    head = next(head);
+}
+
+_Bool snake_buffer_is_full(void){
+    return (head == tail);
+}
+
+_Bool collision(void){
+    for(uint8_t i = tail; next(i) != head; i = next(i)){
+        if(coordinates_equal(head_pos, snake_buffer[i])){
+            return true;
+        }
+    }
+    
+    if(head_pos.x > 7 || head_pos.y > 7){
+        return true;
+    }
+
+    return false;
+}
+
+_Bool coordinates_equal(coordinate coord1, coordinate coord2){
+    return ((coord1.x == coord2.x) && (coord1.y == coord2.y));
+}
+
+void update_score(void){
+    score++;
+    print_number(score, 0);
+}
+
+void update_snake_pixels(void){
+    clear_pixel(tail_pos.x, tail_pos.y, 1);
+    set_pixel(head_pos.x, head_pos.y, 1);
+}
+
+void generate_food(void){
+    uint8_t full_spaces = (head - tail + SNAKE_BUFFER_SIZE) % SNAKE_BUFFER_SIZE;
+    uint8_t empty_spaces = SNAKE_BUFFER_SIZE - full_spaces;
+
+    uint16_t prng_middle_16 = (get_prng() >> 8) & 0xFFFF;
+    uint8_t down_count = prng_middle_16 % empty_spaces + 1;
+    uint8_t temp_x = 0, temp_y = 0;
+    while(down_count > 0){
+        if(get_pixel(temp_x, temp_y, 1) == 0){
+            down_count--;
+        }
+
+        if(down_count == 0){
+            break;
+        }
+
+        temp_x++;
+        if(temp_x >= 8){
+            temp_y++;
+            temp_x = 0;
+        }
+    }
+
+    food_location.x = temp_x;
+    food_location.y = temp_y;
+
+    set_pixel(food_location.x, food_location.y);
+}
+
+_Bool snake_ate_food(void){
+    return coordinates_equal(head_pos, food_location);
+}
